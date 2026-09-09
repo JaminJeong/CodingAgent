@@ -62,6 +62,9 @@ opencode(에이전틱 CLI)를 연결해 테스트하는 과정에서 `--enable-a
 `--tool-call-parser qwen3_coder` 플래그가 없으면 tool_choice=auto 요청이 거부되는 것을 발견,
 compose 파일에 추가. 자세한 내용은 [../opencode/README.md](../opencode/README.md) 참고.
 
+opencode 연동은 [`opencode.json.example`](./opencode.json.example)의 `local-vllm` provider
+블록을 `~/.config/opencode/opencode.json`에 병합하면 된다.
+
 ## 현재 상태
 
 - 엔드포인트: `http://localhost:8000/v1` (opencode 테스트 이후 **GPU 반납을 위해 컨테이너는 현재 종료됨**)

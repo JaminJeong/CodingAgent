@@ -20,6 +20,9 @@ Qwen3-Coder-480B(595GB+ 다운로드, 8x H100 전체 필요)를 바로 시도하
 
 이 검증을 통과한 뒤 본 작업 대상인 [`../qwen3-coder-480b`](../qwen3-coder-480b/README.md)로 진행했다.
 
+opencode 연동은 [`opencode.json.example`](./opencode.json.example)의 `local-qwen-coder-32b`
+provider 블록을 `~/.config/opencode/opencode.json`에 병합하면 된다.
+
 ## 실행
 
 ```bash
