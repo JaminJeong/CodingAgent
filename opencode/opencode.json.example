@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "local-vllm/qwen3-coder-480b",
+  "provider": {
+    "local-vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local vLLM (Qwen3-Coder-480B)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8000/v1"
+      },
+      "models": {
+        "qwen3-coder-480b": {
+          "name": "Qwen3-Coder-480B-A35B-Instruct-FP8 (Local)",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

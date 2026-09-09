@@ -1,0 +1,78 @@
+services:
+  vllm-gpt-oss-120b:
+    # 주의: :latest는 재현성이 없다. 이 저장소 기준 로컬에 받아둔 latest는 vLLM 0.25.1이며
+    # tool/reasoning 파서 이름을 이 이미지에서 직접 확인했다(README.md "파서 이름 검증" 참고).
+    # 상위 버전에서 단일 H100 KV 캐시 할당이 퇴행했다는 리포트가 있으므로
+    # (vllm-project/vllm#33155) 동작 확인 후에는 태그를 고정하는 것을 권장.
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+    container_name: vllm-gpt-oss-120b
+    ipc: host
+    # 이 저장소의 교훈: 첫 기동에서 restart: unless-stopped를 쓰면 engine-init 단계 크래시가
+    # 무한 재시도되며 매번 수십~수백 GB 가중치를 다시 로드한다(과거 126회 반복된 사고가 있었다).
+    # 안정 확인 전까지는 "no"를 유지할 것.
+    restart: "no"
+    ports:
+      - "${HOST_PORT:-8500}:8000"
+    environment:
+      # gpt-oss는 단일 GPU(TP=1)로도 동작한다. 이 저장소 모델 중 유일하게 8장을 다 쓰지 않아도 되므로
+      # GPU_DEVICE_IDS를 실제로 비어 있는 장비 인덱스로 좁혀 쓰는 것이 기본 사용법이다.
+      #
+      # **중요 (2026-08-04 실측)**: 아래 deploy.resources.reservations.devices에 device_ids 없이
+      # capabilities만 지정하면 Docker가 `--gpus all` 상당으로 처리해 NVIDIA_VISIBLE_DEVICES를
+      # 덮어쓴다. 그 결과 컨테이너는 8장을 전부 보게 되고 vLLM은 TP=1일 때 그냥 물리 GPU 0을 잡는다.
+      # 실제로 첫 기동에서 GPU 4를 지정했는데 다른 사용자가 쓰던 GPU 0에 올라갔다.
+      # CUDA_VISIBLE_DEVICES는 컨테이너 안 CUDA 런타임이 직접 해석하므로 이쪽이 확실하게 먹는다.
+      # 이 저장소의 기존 폴더들은 전부 TP=8(8장 전체)이라 이 함정이 드러나지 않았던 것.
+      - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE_IDS:-0}
+      - CUDA_VISIBLE_DEVICES=${GPU_DEVICE_IDS:-0}
+      - HF_TOKEN=${HF_TOKEN:-}
+      # harmony 토크나이저(o200k_base)를 런타임에 openaipublic.blob.core.windows.net에서
+      # 받아오려다 실패하는 사례가 보고됨. 폐쇄망/프록시 환경이면 tiktoken 파일을 미리 받아
+      # 마운트한 뒤 아래를 활성화한다(README.md "문제 대비" 참고).
+      # - TIKTOKEN_ENCODINGS_BASE=/tiktoken_encodings
+    volumes:
+      - ${HF_CACHE_DIR:-/data/models/huggingface}:/root/.cache/huggingface
+      # - ./tiktoken_encodings:/tiktoken_encodings:ro
+    command:
+      - --model
+      - ${MODEL_NAME:-openai/gpt-oss-120b}
+      - --tensor-parallel-size
+      - "${TENSOR_PARALLEL_SIZE:-1}"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-131072}"
+      # 단일 H100(TP=1)에서 vLLM 기본값 0.9는 CUDA OOM을 낸다는 것이 vLLM 공식 레시피의
+      # 알려진 이슈로 문서화되어 있음 — 0.95 + 낮은 max-num-batched-tokens가 공식 완화책.
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTILIZATION:-0.95}"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED_TOKENS:-1024}"
+      - --max-num-seqs
+      - "${MAX_NUM_SEQS:-8}"
+      - --served-model-name
+      - ${SERVED_MODEL_NAME:-gpt-oss-120b}
+      # opencode 등 tool-calling 클라이언트 연결에 필요.
+      # gpt-oss는 harmony 포맷을 쓰므로 파서 이름이 모델명과 다르다:
+      #   tool-call-parser = openai        (vllm/tool_parsers/gptoss_tool_parser.py)
+      #   reasoning-parser = openai_gptoss (vllm/reasoning/gptoss_reasoning_parser.py)
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - ${TOOL_CALL_PARSER:-openai}
+      - --reasoning-parser
+      - ${REASONING_PARSER:-openai_gptoss}
+      # --- 선택 옵션 (기본 기동 성공을 먼저 확인한 뒤 하나씩 추가할 것) ---
+      # TP>1에서 MoE를 intermediate 차원(2880) 대신 expert 단위(128개)로 쪼갠다.
+      # 2880은 MXFP4 블록(32)으로 TP=4/8에서 나누어떨어지지 않아, Qwen3-Coder-480B에서
+      # 겪은 것과 같은 샤딩 실패 위험이 이론상 있다 — 그 경우의 우회책.
+      # - --enable-expert-parallel
+      # vLLM 레시피가 gpt-oss 처리량 향상용으로 권장. 첫 기동에는 넣지 않는다.
+      # - --async-scheduling
+    deploy:
+      resources:
+        reservations:
+          devices:
+            # 이 블록은 "nvidia GPU를 붙여달라"는 요청일 뿐, 어떤 GPU를 쓸지는 정하지 못한다
+            # (device_ids를 안 쓰면 count=all이 되어 8장 전부 노출됨).
+            # 실제 GPU 선택은 위 environment의 CUDA_VISIBLE_DEVICES가 담당한다.
+            # TENSOR_PARALLEL_SIZE와 GPU_DEVICE_IDS의 장수는 반드시 일치시켜야 한다.
+            - driver: nvidia
+              capabilities: [gpu]

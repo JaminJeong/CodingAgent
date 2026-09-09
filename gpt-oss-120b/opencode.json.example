@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "local-gptoss/gpt-oss-120b",
+  "provider": {
+    "local-gptoss": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local vLLM (gpt-oss-120b)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8500/v1"
+      },
+      "models": {
+        "gpt-oss-120b": {
+          "name": "openai/gpt-oss-120b MXFP4 (Local)",
+          "reasoning": true,
+          "tool_call": true,
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        }
+      }
+    }
+  }
+}
