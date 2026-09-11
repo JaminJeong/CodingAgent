@@ -8,30 +8,20 @@
 
 **목표**: Qwen3-Coder-480B(또는 하드웨어 제약 시 동작 가능한 대체 모델)를 OpenAI 호환 API로 로컬에 띄운다.
 
-- [ ] **1-1. 하드웨어 확인**
-  - `nvidia-smi`로 보유 H100 수량 및 VRAM(80GB) 확인
-  - 480B 모델은 다중 H100 필요 (양자화 시 1장으로도 가능) — 보유 GPU 수에 따라 아래 중 선택
-    - GPU 1장 → 양자화(FP8/AWQ 등) 버전의 Qwen3-Coder-480B 또는 대체 경량 모델(Qwen3.6-27B, Devstral Small 2)로 시작
-    - GPU 다중 → Qwen3-Coder-480B 풀사이즈, tensor-parallel 로 분산
-- [ ] **1-2. 추론 엔진 선택 및 설치**
-  - 기본 추천: **vLLM** (설정 간단, Docker 기반)
-  - 대안: **SGLang** (에이전트/RAG처럼 prefix caching 많은 워크로드면 처리량 유리, H100에서 vLLM 대비 최대 6배)
-  - 필요 시 **TensorRT-LLM** (H100 특화 최적화, 설정 복잡도 높음 — 후순위)
-- [ ] **1-3. 모델 다운로드 및 서버 기동**
-  - vLLM 예시:
-    ```bash
-    docker run --gpus all -p 8000:8000 vllm/vllm-openai \
-      --model Qwen/Qwen3-Coder-480B-... \
-      --tensor-parallel-size <GPU수> \
-      --max-model-len 131072
-    ```
-  - GPU 1장뿐이라면 양자화 모델 경로로 교체하거나 `--quantization` 옵션 사용
-- [ ] **1-4. 헬스체크**
-  - `curl http://localhost:8000/v1/models` 로 정상 응답 확인
-  - 간단한 `chat/completions` 호출로 코드 생성 테스트
-- [ ] **1-5. 성능/메모리 튜닝**
-  - `--max-model-len`, `--gpu-memory-utilization` 등 조정하며 OOM 여부 확인
-  - vLLM vs SGLang 처리량 비교가 필요하면 동일 프롬프트로 벤치마크
+- [x] **1-1. 하드웨어 확인 — 완료** (→ [`qwen3-coder-480b/README.md`](../qwen3-coder-480b/README.md) 환경)
+  - H100 80GB × 8장(총 640GB VRAM) 확보 확인, RAM 1.7TB, `/data` 공유 스토리지 77TB
+  - GPU 다중 확보 → Qwen3-Coder-480B 풀사이즈(FP8) + tensor-parallel 경로로 진행
+- [x] **1-2. 추론 엔진 선택 및 설치 — 완료**
+  - **vLLM** 채택(`vllm/vllm-openai:latest`, Docker 기반) — SGLang/TensorRT-LLM은 검토만 하고 미사용
+- [x] **1-3. 모델 다운로드 및 서버 기동 — 완료** (→ [`qwen3-coder-480b/docker-compose.yml`](../qwen3-coder-480b/docker-compose.yml))
+  - 공식 FP8 양자화(`Qwen3-Coder-480B-A35B-Instruct-FP8`, 482.2GB) 채택 — BF16(960.3GB)은 8×H100 640GB에 불가
+  - `--tensor-parallel-size 8`은 FP8 블록 양자화 샤드 크기 문제로 실패 → `--tensor-parallel-size 4 --pipeline-parallel-size 2`로 해결 (상세: README.md 3단계)
+- [x] **1-4. 헬스체크 — 완료**
+  - `curl http://localhost:8000/v1/models` 정상 응답, `/v1/chat/completions`로 코드 생성 테스트 통과
+  - opencode 연동을 위한 `--enable-auto-tool-choice --tool-call-parser qwen3_coder` 플래그까지 검증 완료 (→ README.md 5단계)
+- [ ] **1-5. 성능/메모리 튜닝 — 미실시**
+  - TP/PP 조합 문제 해결 과정에서 최소한의 조정만 했고, `--gpu-memory-utilization` 등 별도 튜닝이나 vLLM vs SGLang 처리량 비교는 하지 않음
+  - opencode 테스트 완료 후 GPU 반납을 위해 컨테이너 종료됨 — 재개 시 진행 항목
 
 ---
 
